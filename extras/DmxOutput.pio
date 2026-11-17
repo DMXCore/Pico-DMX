@@ -1,22 +1,32 @@
 ; Author: Jostein Løwer, github: jostlowe
 ; SPDX-License-Identifier: BSD-3-Clause
-; 
+;
 ; PIO program for outputting the DMX lighting protocol.
 ; Compliant with ANSI E1.11-2008 (R2018)
 ; The program assumes a PIO clock frequency of exactly 1MHz
+;
+; The break and mark-after-break lengths come first in the TX FIFO, as two words, before
+; the frame's bytes (DmxOutput::write puts them there): the break is (first word + 2) us,
+; the MAB (second word + 11) us. So any break from 2 us and any MAB from 11 us, in 1 us
+; steps.
 
 .program DmxOutput
 .side_set 1 opt
 
 
 ; Assert break condition
-    set x, 21   side 0     ; Preload bit counter, assert break condition for 176us 
-breakloop:                 ; This loop will run 22 times
-    jmp x-- breakloop [7]  ; Each loop iteration is 8 cycles.
+    pull block  side 1     ; The break length; the line is idle (high) while waiting
+    out x, 32   side 0     ; Break starts
+breakloop:
+    jmp x-- breakloop      ; 1 us per iteration: the break lasts x + 2 us
 
 
-; Assert start condition
-    nop [7]    side 1      ; Assert MAB. 8 cycles nop and 8 cycles stop-bits = 16us
+; Assert mark after break
+    pull block  side 1     ; MAB starts: the MAB length
+    out x, 32
+mabloop:
+    jmp x-- mabloop        ; 1 us per iteration, then the 8 us of the first pull below:
+                           ; the MAB lasts x + 11 us
 
 
 ; Send data frame

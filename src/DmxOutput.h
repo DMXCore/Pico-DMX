@@ -21,6 +21,13 @@
 #define DMX_UNIVERSE_SIZE 512
 #define DMX_SM_FREQ 1000000
 
+// Break and mark-after-break lengths in microseconds: the defaults, and the shortest the
+// PIO program can do (DmxOutput.pio).
+#define DMX_DEFAULT_BREAK_US 177
+#define DMX_DEFAULT_MAB_US 16
+#define DMX_MIN_BREAK_US 2
+#define DMX_MIN_MAB_US 11
+
 class DmxOutput
 {
     uint _prgm_offset;
@@ -28,6 +35,8 @@ class DmxOutput
     uint _sm;
     PIO _pio;
     uint _dma;
+    uint _break_us = DMX_DEFAULT_BREAK_US;
+    uint _mab_us = DMX_DEFAULT_MAB_US;
 
 public:
     /*
@@ -85,6 +94,16 @@ public:
     */
 
     void write(uint8_t *universe, uint length);
+
+    /*
+        Sets the break and mark-after-break lengths in microseconds for the frames
+        written from now on (default 177 us and 16 us). Values below DMX_MIN_BREAK_US
+        and DMX_MIN_MAB_US are raised to them. ANSI E1.11 asks a transmitter for a break
+        of at least 92 us and a MAB of at least 12 us; checking that is the caller's.
+    */
+    void set_timing(uint break_us, uint mab_us);
+    uint break_us() const { return _break_us; }
+    uint mab_us() const { return _mab_us; }
 
     /*
         Checks whether the DMX transmitter is busy sending

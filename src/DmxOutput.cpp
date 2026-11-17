@@ -93,6 +93,12 @@ DmxOutput::return_code DmxOutput::begin(uint pin, PIO pio)
     return SUCCESS;
 }
 
+void DmxOutput::set_timing(uint break_us, uint mab_us)
+{
+    _break_us = break_us < DMX_MIN_BREAK_US ? DMX_MIN_BREAK_US : break_us;
+    _mab_us = mab_us < DMX_MIN_MAB_US ? DMX_MIN_MAB_US : mab_us;
+}
+
 void DmxOutput::write(uint8_t *universe, uint length)
 {
 
@@ -100,10 +106,15 @@ void DmxOutput::write(uint8_t *universe, uint length)
     pio_sm_set_enabled(_pio, _sm, false);
 
     // Reset the PIO state machine to a consistent state. Clear the buffers and registers
+    pio_sm_clear_fifos(_pio, _sm);
     pio_sm_restart(_pio, _sm);
 
     // Start the DMX PIO program from the beginning
     pio_sm_exec(_pio, _sm, pio_encode_jmp(_prgm_offset));
+
+    // The break and MAB lengths go first, less the program's own overhead (DmxOutput.pio)
+    pio_sm_put(_pio, _sm, _break_us - DMX_MIN_BREAK_US);
+    pio_sm_put(_pio, _sm, _mab_us - DMX_MIN_MAB_US);
 
     // Restart the PIO state machinge
     pio_sm_set_enabled(_pio, _sm, true);
