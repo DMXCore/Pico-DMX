@@ -127,8 +127,9 @@ DmxInput::return_code DmxInput::begin(uint pin, uint num_channels, PIO pio)
     sm_config_set_fifo_join(&sm_conf, PIO_FIFO_JOIN_RX);
 
     // Setup the clock divider to run the state machine at exactly 2MHz
-    uint clk_div = clock_get_hz(clk_sys) / DMX_SM_FREQ_INPUT;
-    sm_config_set_clkdiv(&sm_conf, clk_div);
+    // A fractional divider: 125 MHz / 2 MHz is 62.5, which an integer one would make 62
+    // (the receiver 0.8 % fast).
+    sm_config_set_clkdiv(&sm_conf, (float)clock_get_hz(clk_sys) / (float)DMX_SM_FREQ_INPUT);
 
     // Load our configuration, jump to the start of the program and run the State Machine
     pio_sm_init(pio, sm, prgm_offsets[pio_ind], &sm_conf);
