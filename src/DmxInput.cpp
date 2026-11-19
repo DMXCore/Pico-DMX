@@ -40,14 +40,22 @@ static void startTransfer(volatile DmxInput *instance)
     pio_sm_clear_fifos(instance->_pio, instance->_sm);
 }
 
+// The end-of-frame flag a receiver's state machine raises: the program's "irq 1 rel" is
+// flag 1 plus the state machine's number, modulo 4, so each receiver on a PIO has its own.
+static inline uint frame_irq(uint sm)
+{
+    return (1u + sm) & 3u;
+}
+
 static void dmxinput_pio_irq_handler()
 {
-    // Check all instances, could be improved
+    // Every receiver whose own flag is up (several may be, on one PIO)
     for(int i=0;i<NUM_DMA_CHANS;i++) {
         if(active_inputs[i]!=nullptr) {
             volatile DmxInput *instance = active_inputs[i];
+            const uint flag = frame_irq(instance->_sm);
 
-            if(!pio_interrupt_get(instance->_pio, 1))
+            if(!pio_interrupt_get(instance->_pio, flag))
                 continue;
 
             // Capture the transfer count before we abort the dma transfer.
@@ -65,8 +73,7 @@ static void dmxinput_pio_irq_handler()
             dma_channel_abort(i);
 
             // Clear interrupt
-            pio_interrupt_clear(instance->_pio, 1);
-            break;
+            pio_interrupt_clear(instance->_pio, flag);
         }
     }
 }
@@ -136,8 +143,8 @@ DmxInput::return_code DmxInput::begin(uint pin, uint num_channels, PIO pio)
         irq_set_exclusive_handler(PIO0_IRQ_0, dmxinput_pio_irq_handler);
         // enable the IRQ
         irq_set_enabled(PIO0_IRQ_0, true);
-        //TODO: SM0 and SM1?
-        pio0_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_BITS;
+        // This receiver's end-of-frame flag (frame_irq), next to any other receiver's
+        hw_set_bits(&pio0_hw->inte0, PIO_IRQ0_INTE_SM0_BITS << frame_irq(sm));
     }
     else
     {
@@ -145,8 +152,8 @@ DmxInput::return_code DmxInput::begin(uint pin, uint num_channels, PIO pio)
         irq_set_exclusive_handler(PIO1_IRQ_0, dmxinput_pio_irq_handler);
         // enable the IRQ
         irq_set_enabled(PIO1_IRQ_0, true);
-        //TODO: SM0 and SM1?
-        pio1_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_BITS;
+        // This receiver's end-of-frame flag (frame_irq), next to any other receiver's
+        hw_set_bits(&pio1_hw->inte0, PIO_IRQ0_INTE_SM0_BITS << frame_irq(sm));
     }
 
     _pio = pio;

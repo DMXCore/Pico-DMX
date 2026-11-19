@@ -40,7 +40,7 @@ static const uint16_t DmxInput_program_instructions[] = {
     0x0017, // 20: jmp    23                         
     0x8020, // 21: push   block                      
             //     .wrap
-    0xc001, // 22: irq    nowait 1                   
+    0xc011, // 22: irq    nowait 1 rel                   
     0x20a0, // 23: wait   1 pin, 0                   
     0x0000, // 24: jmp    0                          
 };

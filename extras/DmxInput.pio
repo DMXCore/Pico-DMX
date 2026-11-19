@@ -50,7 +50,9 @@ stop_good_2:
 .wrap
 
 end_of_frame:
-    irq 1                               ; Signal that we have a frame with less than 513 bytes
+    irq 1 rel                           ; Signal that we have a frame with less than 513 bytes
+                                        ; (flag 1 + this state machine's number, so receivers
+                                        ; on one PIO do not take each other's frames)
 bad_stop:
     wait 1 pin 0                        ; and wait for line to return to idle state.
     jmp restart
