@@ -40,6 +40,26 @@ static void startTransfer(volatile DmxInput *instance)
     pio_sm_clear_fifos(instance->_pio, instance->_sm);
 }
 
+// A frame is in the buffer, _last_packet_length long: start the transfer for the next one,
+// stamp the time and tell the owner.
+static void frameDone(volatile DmxInput *instance)
+{
+    startTransfer(instance);
+
+#ifdef ARDUINO
+    instance->_last_packet_timestamp = millis();
+#else
+    instance->_last_packet_timestamp = to_ms_since_boot(get_absolute_time());
+#endif
+    // Trigger the callback if we have one
+    if (instance->_cb != nullptr) {
+        (*(instance->_cb))((DmxInput*)instance);
+    }
+
+    // Default the packet length to the full length
+    instance->_last_packet_length = instance->_num_channels + 1;
+}
+
 // The end-of-frame flag a receiver's state machine raises: the program's "irq 1 rel" is
 // flag 1 plus the state machine's number, modulo 4, so each receiver on a PIO has its own.
 static inline uint frame_irq(uint sm)
@@ -66,14 +86,30 @@ static void dmxinput_pio_irq_handler()
 #if DEBUG_PRINT
             printf("**Packet len = %u\n", transferCount);
 #endif
-            instance->_last_packet_length = transferCount;
-
-            // Abort the dma transfer. Note that this will trigger the dma IRQ, but
-            // that's a good thing as it will also restart the transfer for the next packet.
-            dma_channel_abort(i);
-
             // Clear interrupt
             pio_interrupt_clear(instance->_pio, flag);
+
+            // Nothing received since the transfer was started: the frame was complete and
+            // the DMA handler has already taken it. The transfer it started stays as it is.
+            if (transferCount == 0)
+                continue;
+
+            instance->_last_packet_length = transferCount;
+
+            // End the transfer and start the next one here. On the RP2040 the abort may
+            // raise the channel's completion interrupt (RP2040-E13), and this code used to
+            // rely on that to restart the receiver; the RP2350 raises none, so a frame
+            // shorter than the buffer left the receiver stopped for good. So the channel's
+            // interrupt is off for the abort, and whatever it raised is cleared.
+            dma_channel_set_irq0_enabled(i, false);
+            // RP2350-E5: the channel must be disabled before it is aborted
+            hw_clear_bits(&dma_hw->ch[i].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+            dma_channel_abort(i);
+            hw_set_bits(&dma_hw->ch[i].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+            dma_channel_acknowledge_irq0(i);
+            dma_channel_set_irq0_enabled(i, true);
+
+            frameDone(instance);
         }
     }
 }
@@ -196,20 +232,7 @@ void dmxinput_dma_handler() {
 #if DEBUG_PRINT
             printf("**Receive frame\n");
 #endif
-            startTransfer(instance);
-
-#ifdef ARDUINO
-            instance->_last_packet_timestamp = millis();
-#else
-            instance->_last_packet_timestamp = to_ms_since_boot(get_absolute_time());
-#endif
-            // Trigger the callback if we have one
-            if (instance->_cb != nullptr) {
-                (*(instance->_cb))((DmxInput*)instance);
-            }
-
-            // Default the packet length to the full length
-            instance->_last_packet_length = instance->_num_channels + 1;
+            frameDone(instance);
         }
     }
 }
